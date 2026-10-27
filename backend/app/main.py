@@ -47,6 +47,13 @@ async def health_check():
     }
 
 
+@app.get("/health/ai", tags=["system"])
+async def health_ai_check():
+    from app.services.ai import get_ai_service
+    ai_service = get_ai_service()
+    return await ai_service.check_health()
+
+
 @app.get("/", tags=["system"])
 async def root():
     return {

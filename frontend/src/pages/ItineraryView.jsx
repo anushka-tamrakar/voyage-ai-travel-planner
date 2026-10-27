@@ -83,6 +83,7 @@ export const ItineraryView = () => {
   const [popularData, setPopularData] = useState(null);
   const [popularCategory, setPopularCategory] = useState('attractions');
   const [loadingPopular, setLoadingPopular] = useState(false);
+  const [overBudgetWarning, setOverBudgetWarning] = useState(null);
 
   useEffect(() => {
     const handleCurrencySync = (e) => {
@@ -247,9 +248,10 @@ export const ItineraryView = () => {
     }
   };
 
-  // Add popular item directly into current day activities
-  const handleAddPopularStop = (item) => {
+  // Execute adding stop and recompute totals
+  const executeAddStop = (item) => {
     if (!currentDay) return;
+    const fee = parseCostToINR(item.price_range || '0');
     const newActivity = {
       time: 'Flexible Slot',
       title: `Exploration: ${item.name}`,
@@ -260,7 +262,7 @@ export const ItineraryView = () => {
       category: popularCategory === 'foods' ? 'food' : 'sightseeing',
       description: item.description,
       location: `${item.area}, ${trip.destination}`,
-      estimated_cost: item.price_range || '₹300 per person',
+      estimated_cost: fee > 0 ? `₹${fee}` : 'Free',
       travel_tip: `Renowned highlight in ${trip.destination}. Perfect addition to Day ${activeDayIndex + 1}.`,
     };
 
@@ -270,16 +272,44 @@ export const ItineraryView = () => {
         ...updatedDays[activeDayIndex],
         activities: [...(updatedDays[activeDayIndex].activities || []), newActivity],
       };
+
+      const oldB = prev.itinerary?.budget_summary || {};
+      const newTotal = (oldB.total_estimated_cost || 0) + fee;
+      const targetB = oldB.total_budget || 0;
+      const newBudgetSummary = {
+        ...oldB,
+        total_estimated_cost: newTotal,
+        remaining_budget: targetB - newTotal,
+        within_budget: newTotal <= targetB,
+        below_minimum: newTotal > targetB,
+      };
+
       return {
         ...prev,
         itinerary: {
           ...prev.itinerary,
           days: updatedDays,
+          budget_summary: newBudgetSummary,
         },
       };
     });
 
     setSuccessToast(`Added "${item.name}" to Day ${activeDayIndex + 1}!`);
+  };
+
+  // Add popular item directly into current day activities with budget check
+  const handleAddPopularStop = (item) => {
+    if (!currentDay) return;
+    const fee = parseCostToINR(item.price_range || '0');
+    const currentTotal = budgetSummary?.tripTotalINR || 0;
+    const targetBudget = budgetSummary?.targetBudgetTripINR || 0;
+    const newTotal = currentTotal + fee;
+
+    if (newTotal > targetBudget && targetBudget > 0) {
+      setOverBudgetWarning({ item, newTotal, targetBudget });
+    } else {
+      executeAddStop(item);
+    }
   };
 
   const handlePrint = () => {
@@ -324,9 +354,47 @@ export const ItineraryView = () => {
   const currentDay = days[activeDayIndex] || (days.length > 0 ? days[0] : null);
   const recommendations = trip?.itinerary?.recommendations || { hotels: [], dining: [] };
 
-  // Calculate total itinerary cost in INR, remaining budget and real daily cap (Requirement 2)
+  // Step 5: Show only the backend's numbers. Category percentages against total_budget.
+  const backendBudget = trip?.itinerary?.budget_summary;
   const budgetSummary = useMemo(() => {
     if (!days || days.length === 0) return null;
+    const numDays = Math.max(1, days.length);
+
+    if (backendBudget) {
+      const targetBudgetTripINR = Number(backendBudget.total_budget) || 0;
+      const tripTotalINR = Number(backendBudget.total_estimated_cost) || 0;
+      const remainingBudgetINR = Number(backendBudget.remaining_budget); // Can be negative
+      const withinBudget = Boolean(backendBudget.within_budget);
+      const dailyCapINR = Number(backendBudget.daily_cap) || Math.round(targetBudgetTripINR / numDays);
+      const varianceINR = Math.abs(tripTotalINR - targetBudgetTripINR);
+      const catCosts = backendBudget.per_category_costs || {};
+
+      return {
+        targetBudgetTripINR,
+        tripTotalINR,
+        remainingBudgetINR,
+        withinBudget,
+        dailyCapINR,
+        varianceINR,
+        isUnderBudget: withinBudget,
+        perDayCosts: backendBudget.per_day_costs || Array(numDays).fill(dailyCapINR),
+        perCategoryCosts: catCosts,
+        budgetNote: backendBudget.budget_note || [],
+        belowMinimum: Boolean(backendBudget.below_minimum),
+        minimumRequired: backendBudget.minimum_required,
+        stayTotalINR: Number(catCosts.stay || 0),
+        foodTotalINR: Number(catCosts.food || 0),
+        activitiesTotalINR: Number(catCosts.activities || 0),
+        transportTotalINR: Number(catCosts.transport || 0),
+        bufferTotalINR: Number(catCosts.buffer || 0),
+      };
+    }
+
+    // Fallback for older trips without backend budget_summary
+    const targetBudgetTripINR = trip?.total_budget
+      ? Number(trip.total_budget)
+      : (parseCostToINR(trip?.budget_per_day) || 3000) * numDays * (trip?.group_size || 1);
+    const realDailyCapINR = Math.max(100, Math.round(targetBudgetTripINR / numDays));
 
     let activitiesTotalINR = 0;
     days.forEach((d) => {
@@ -335,48 +403,41 @@ export const ItineraryView = () => {
       });
     });
 
-    const numDays = Math.max(1, days.length);
-
-    // Stay estimate: comfort budget or mid-range hotel recommendation
-    const hotelCostPerNight = trip?.stay_budget_per_night || (recommendations.hotels?.[1] ? parseCostToINR(recommendations.hotels[1].price_range) : 2500);
+    const hotelCostPerNight = trip?.stay_budget_per_night || 2500;
     const stayTotalINR = hotelCostPerNight * Math.max(numDays - 1, 1);
-
-    // Food estimate: comfort budget or ₹1200/day
     const foodPerMeal = trip?.food_budget_per_meal || 400;
     const foodTotalINR = foodPerMeal * 3 * numDays * (trip?.group_size || 1);
-
-    // Local transit estimate
     const transportTotalINR = Math.round(400 * numDays * (trip?.group_size || 1));
     const bufferTotalINR = Math.round((activitiesTotalINR + stayTotalINR + foodTotalINR + transportTotalINR) * 0.05);
-
     const tripTotalINR = activitiesTotalINR + stayTotalINR + foodTotalINR + transportTotalINR + bufferTotalINR;
-
-    // Target total trip budget (INR)
-    const targetBudgetTripINR = trip?.total_budget
-      ? Number(trip.total_budget)
-      : (parseCostToINR(trip?.budget_per_day) || 3000) * numDays * (trip?.group_size || 1);
-
-    // Real Daily Cap (strictly never ₹1 or 0)
-    const realDailyCapINR = Math.max(100, Math.round(targetBudgetTripINR / numDays));
-
-    const remainingBudgetINR = Math.max(0, targetBudgetTripINR - tripTotalINR);
-    const isUnderBudget = tripTotalINR <= targetBudgetTripINR;
-    const varianceINR = Math.abs(tripTotalINR - targetBudgetTripINR);
+    const remainingBudgetINR = targetBudgetTripINR - tripTotalINR;
 
     return {
-      activitiesTotalINR,
+      targetBudgetTripINR,
+      tripTotalINR,
+      remainingBudgetINR,
+      withinBudget: tripTotalINR <= targetBudgetTripINR,
+      dailyCapINR: realDailyCapINR,
+      varianceINR: Math.abs(tripTotalINR - targetBudgetTripINR),
+      isUnderBudget: tripTotalINR <= targetBudgetTripINR,
+      perDayCosts: Array(numDays).fill(realDailyCapINR),
+      perCategoryCosts: {
+        stay: stayTotalINR,
+        food: foodTotalINR,
+        activities: activitiesTotalINR,
+        transport: transportTotalINR,
+        buffer: bufferTotalINR,
+      },
+      budgetNote: [],
+      belowMinimum: false,
+      minimumRequired: null,
       stayTotalINR,
       foodTotalINR,
+      activitiesTotalINR,
       transportTotalINR,
       bufferTotalINR,
-      tripTotalINR,
-      targetBudgetTripINR,
-      realDailyCapINR,
-      remainingBudgetINR,
-      isUnderBudget,
-      varianceINR,
     };
-  }, [days, recommendations, trip]);
+  }, [backendBudget, days, trip]);
 
   // All activities across current day for MapView
   const currentDayStops = useMemo(() => {
@@ -553,36 +614,70 @@ export const ItineraryView = () => {
         </button>
       </div>
 
-      {/* If No Itinerary Exists */}
+      {/* If Generation Error or No Itinerary Exists */}
       {!trip.itinerary || days.length === 0 ? (
-        <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 p-12 text-center max-w-lg mx-auto shadow-sm">
-          <div className="w-16 h-16 rounded-2xl bg-brand-50 dark:bg-brand-950/60 text-brand-600 dark:text-brand-400 flex items-center justify-center mx-auto mb-4">
-            <Sparkles className="w-8 h-8" />
+        error ? (
+          <div className="bg-rose-50 dark:bg-rose-950/40 rounded-3xl border border-rose-200 dark:border-rose-900 p-8 sm:p-12 text-center max-w-lg mx-auto shadow-sm">
+            <div className="w-16 h-16 rounded-2xl bg-rose-100 dark:bg-rose-900/60 text-rose-600 dark:text-rose-400 flex items-center justify-center mx-auto mb-4">
+              <AlertCircle className="w-8 h-8" />
+            </div>
+            <h2 className="text-xl font-bold text-rose-900 dark:text-rose-100">
+              Generation Failed
+            </h2>
+            <p className="text-sm text-rose-700 dark:text-rose-300 mt-2 mb-6 break-words">
+              {error}
+            </p>
+            <button
+              onClick={() => {
+                setError('');
+                handleGenerate();
+              }}
+              disabled={regenerating}
+              className="inline-flex items-center gap-2 px-6 py-3 rounded-2xl bg-rose-600 text-white font-semibold text-sm shadow-lg shadow-rose-600/30 hover:bg-rose-700 disabled:opacity-50"
+            >
+              {regenerating ? (
+                <>
+                  <RotateCw className="w-4 h-4 animate-spin" />
+                  Retrying...
+                </>
+              ) : (
+                <>
+                  <RotateCw className="w-4 h-4" />
+                  Try again
+                </>
+              )}
+            </button>
           </div>
-          <h2 className="text-xl font-bold text-slate-800 dark:text-slate-100">
-            {t('itinerary.notGeneratedTitle') || 'No Itinerary Generated Yet'}
-          </h2>
-          <p className="text-sm text-slate-500 dark:text-slate-400 mt-2 mb-6">
-            Click below to generate your personalized AI itinerary.
-          </p>
-          <button
-            onClick={handleGenerate}
-            disabled={regenerating}
-            className="inline-flex items-center gap-2 px-6 py-3 rounded-2xl bg-brand-600 text-white font-semibold text-sm shadow-lg shadow-brand-600/30 hover:bg-brand-700 disabled:opacity-50"
-          >
-            {regenerating ? (
-              <>
-                <RotateCw className="w-4 h-4 animate-spin" />
-                Generating...
-              </>
-            ) : (
-              <>
-                <Sparkles className="w-4 h-4" />
-                Generate Now
-              </>
-            )}
-          </button>
-        </div>
+        ) : (
+          <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 p-12 text-center max-w-lg mx-auto shadow-sm">
+            <div className="w-16 h-16 rounded-2xl bg-brand-50 dark:bg-brand-950/60 text-brand-600 dark:text-brand-400 flex items-center justify-center mx-auto mb-4">
+              <Sparkles className="w-8 h-8" />
+            </div>
+            <h2 className="text-xl font-bold text-slate-800 dark:text-slate-100">
+              {t('itinerary.notGeneratedTitle') || 'No Itinerary Generated Yet'}
+            </h2>
+            <p className="text-sm text-slate-500 dark:text-slate-400 mt-2 mb-6">
+              Click below to generate your personalized AI itinerary.
+            </p>
+            <button
+              onClick={handleGenerate}
+              disabled={regenerating}
+              className="inline-flex items-center gap-2 px-6 py-3 rounded-2xl bg-brand-600 text-white font-semibold text-sm shadow-lg shadow-brand-600/30 hover:bg-brand-700 disabled:opacity-50"
+            >
+              {regenerating ? (
+                <>
+                  <RotateCw className="w-4 h-4 animate-spin" />
+                  Generating...
+                </>
+              ) : (
+                <>
+                  <Sparkles className="w-4 h-4" />
+                  Generate Now
+                </>
+              )}
+            </button>
+          </div>
+        )
       ) : (
         <div>
           {/* TAB 1: TIMELINE */}
@@ -609,24 +704,28 @@ export const ItineraryView = () => {
               <div className="flex items-center gap-2 overflow-x-auto pb-4 mb-8 no-print scrollbar-none">
                 {days.map((day, idx) => {
                   const isActive = idx === activeDayIndex;
+                  const dayCost = day.day_cost || budgetSummary?.perDayCosts?.[idx] || 0;
                   return (
                     <button
-                      key={idx}
+                      key={`day-tab-${day.id || day.day || idx}`}
                       onClick={() => setActiveDayIndex(idx)}
-                      className={`px-5 py-3 rounded-2xl text-xs sm:text-sm font-bold whitespace-nowrap transition-all flex items-center gap-2 ${
+                      className={`px-4 py-2.5 rounded-2xl text-xs font-bold whitespace-nowrap transition-all flex flex-col items-start gap-0.5 ${
                         isActive
                           ? 'bg-slate-900 dark:bg-brand-600 text-white shadow-md'
                           : 'bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800'
                       }`}
                     >
-                      <span>
-                        Day {day.day || idx + 1}
-                      </span>
-                      {day.theme && (
-                        <span className={`text-[11px] font-normal truncate max-w-[140px] opacity-80`}>
-                          &bull; {day.theme}
-                        </span>
-                      )}
+                      <div className="flex items-center gap-1.5">
+                        <span>Day {day.day || idx + 1}</span>
+                        {day.theme && (
+                          <span className="text-[11px] font-normal truncate max-w-[130px] opacity-80">
+                            &bull; {day.theme}
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-[10px] font-medium opacity-75">
+                        {formatCurrency(dayCost, currentCurrency, exchangeRates)} / {formatCurrency(budgetSummary?.dailyCapINR, currentCurrency, exchangeRates)}
+                      </div>
                     </button>
                   );
                 })}
@@ -634,13 +733,13 @@ export const ItineraryView = () => {
 
               {/* Current day activities */}
               {currentDay && (
-                <div className="space-y-6">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-4 border-b border-slate-200 dark:border-slate-800">
+                <div key={`day-content-${currentDay.id || currentDay.day || activeDayIndex}`} className="space-y-6">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-4 border-b border-slate-200 dark:border-slate-800 gap-2">
                     <div>
-                      <h2 className="text-xl font-bold text-slate-900 dark:text-white">
-                        Day {currentDay.day}
+                      <h2 className="text-xl font-bold text-slate-900 dark:text-white flex items-center flex-wrap gap-2">
+                        <span>Day {currentDay.day}</span>
                         {currentDay.theme && (
-                          <span className="text-brand-600 dark:text-brand-400 font-semibold ml-2">
+                          <span className="text-brand-600 dark:text-brand-400 font-semibold text-base">
                             &mdash; {currentDay.theme}
                           </span>
                         )}
@@ -649,9 +748,15 @@ export const ItineraryView = () => {
                         <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">{currentDay.date}</p>
                       )}
                     </div>
-                    <span className="text-xs text-slate-500 dark:text-slate-400 font-medium mt-1 sm:mt-0">
-                      {currentDay.activities?.length || 0} activities scheduled
-                    </span>
+                    <div className="flex items-center gap-2 text-xs">
+                      <span className="px-2.5 py-1 rounded-full bg-slate-100 dark:bg-slate-800 font-semibold text-slate-700 dark:text-slate-300">
+                        Day Cost: <strong>{formatCurrency(currentDay.day_cost || budgetSummary?.perDayCosts?.[activeDayIndex] || 0, currentCurrency, exchangeRates)}</strong>
+                      </span>
+                      <span className="text-slate-400">&bull;</span>
+                      <span className="text-slate-500 dark:text-slate-400 font-medium">
+                        {currentDay.activities?.length || 0} activities
+                      </span>
+                    </div>
                   </div>
 
                   {/* Activities list with EXACT place names and area (Requirement 3) */}
@@ -1143,7 +1248,11 @@ export const ItineraryView = () => {
                     {formatCurrency(budgetSummary.tripTotalINR, currentCurrency, exchangeRates)}
                   </div>
                   <div className="text-xs text-slate-500 dark:text-slate-400 mt-2">
-                    Remaining: <strong>{formatCurrency(budgetSummary.remainingBudgetINR, currentCurrency, exchangeRates)}</strong>
+                    Remaining:{' '}
+                    <strong className={budgetSummary.remainingBudgetINR < 0 ? 'text-rose-600 dark:text-rose-400 font-bold' : 'text-slate-800 dark:text-slate-200'}>
+                      {budgetSummary.remainingBudgetINR < 0 ? '-' : ''}
+                      {formatCurrency(Math.abs(budgetSummary.remainingBudgetINR), currentCurrency, exchangeRates)}
+                    </strong>
                   </div>
                 </div>
 
@@ -1155,7 +1264,7 @@ export const ItineraryView = () => {
                   }`}
                 >
                   <span className="text-xs font-bold uppercase tracking-wider">
-                    {budgetSummary.isUnderBudget ? 'Under Target Budget' : 'Over Target Budget'}
+                    {budgetSummary.isUnderBudget ? 'Within Target Budget' : 'Over Target Budget'}
                   </span>
                   <div
                     className={`text-2xl font-extrabold mt-1 flex items-center gap-1.5 ${
@@ -1172,17 +1281,30 @@ export const ItineraryView = () => {
                     {formatCurrency(budgetSummary.varianceINR, currentCurrency, exchangeRates)}
                   </div>
                   <div className="text-xs text-slate-600 dark:text-slate-400 mt-2">
-                    {budgetSummary.isUnderBudget
-                      ? 'Well planned within your total financial parameters!'
-                      : 'Consider fine-tuning luxury hotel or fine-dining options.'}
+                    {budgetSummary.budgetNote && budgetSummary.budgetNote.length > 0 ? (
+                      <div className="space-y-1">
+                        {budgetSummary.budgetNote.map((note, nIdx) => (
+                          <div key={nIdx}>&bull; {note}</div>
+                        ))}
+                      </div>
+                    ) : budgetSummary.belowMinimum ? (
+                      <div>
+                        Minimum budget required for {days.length} days is{' '}
+                        <strong>{formatCurrency(budgetSummary.minimumRequired, currentCurrency, exchangeRates)}</strong>.
+                      </div>
+                    ) : budgetSummary.isUnderBudget ? (
+                      <div>All activities, accommodation, food, and transit fit within your {formatCurrency(budgetSummary.targetBudgetTripINR, currentCurrency, exchangeRates)} total budget.</div>
+                    ) : (
+                      <div>Estimated costs exceed your target budget.</div>
+                    )}
                   </div>
                 </div>
               </div>
 
-              {/* Category Breakdown CSS Bars */}
+              {/* Category Breakdown CSS Bars (Calculated against total_budget) */}
               <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 sm:p-8 border border-slate-200/80 dark:border-slate-800 shadow-sm space-y-5">
                 <h4 className="font-bold text-base text-slate-900 dark:text-white">
-                  Category Spending Allocation
+                  Category Spending Allocation (% of Total Budget)
                 </h4>
 
                 {[
@@ -1213,21 +1335,21 @@ export const ItineraryView = () => {
                   },
                 ].map((cat, idx) => {
                   const pct = Math.max(
-                    Math.round((cat.amount / Math.max(1, budgetSummary.tripTotalINR)) * 100),
-                    3
+                    Math.round((cat.amount / Math.max(1, budgetSummary.targetBudgetTripINR)) * 100),
+                    1
                   );
                   return (
                     <div key={idx} className="space-y-1.5">
                       <div className="flex justify-between text-xs font-semibold text-slate-700 dark:text-slate-300">
                         <span>{cat.label}</span>
                         <span>
-                          {formatCurrency(cat.amount, currentCurrency, exchangeRates)} ({pct}%)
+                          {formatCurrency(cat.amount, currentCurrency, exchangeRates)} ({pct}% of budget)
                         </span>
                       </div>
                       <div className="w-full bg-slate-100 dark:bg-slate-800 h-3 rounded-full overflow-hidden">
                         <div
                           className={`h-full rounded-full ${cat.color} transition-all duration-500`}
-                          style={{ width: `${pct}%` }}
+                          style={{ width: `${Math.min(100, pct)}%` }}
                         ></div>
                       </div>
                     </div>
@@ -1504,6 +1626,42 @@ export const ItineraryView = () => {
               </div>
             </form>
           </motion.div>
+        </div>
+      )}
+      {/* Over-budget Warning Confirmation Modal */}
+      {overBudgetWarning && (
+        <div className="fixed inset-0 z-50 bg-slate-900/40 dark:bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 sm:p-8 max-w-md w-full shadow-2xl border border-rose-200 dark:border-rose-900 space-y-4">
+            <div className="w-12 h-12 rounded-2xl bg-rose-100 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400 flex items-center justify-center">
+              <AlertCircle className="w-6 h-6" />
+            </div>
+            <h3 className="text-lg font-bold text-slate-900 dark:text-white">
+              Budget Warning
+            </h3>
+            <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+              Adding <strong>"{overBudgetWarning.item.name}"</strong> will bring the total trip cost to{' '}
+              <strong className="text-rose-600">{formatCurrency(overBudgetWarning.newTotal, currentCurrency, exchangeRates)}</strong>, exceeding your budget of{' '}
+              <strong>{formatCurrency(overBudgetWarning.targetBudget, currentCurrency, exchangeRates)}</strong>.
+            </p>
+            <div className="flex items-center justify-end gap-3 pt-2">
+              <button
+                onClick={() => setOverBudgetWarning(null)}
+                className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  const itm = overBudgetWarning.item;
+                  setOverBudgetWarning(null);
+                  executeAddStop(itm);
+                }}
+                className="px-4 py-2 rounded-xl text-xs font-bold bg-rose-600 hover:bg-rose-700 text-white shadow-md shadow-rose-600/30"
+              >
+                Confirm & Add
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

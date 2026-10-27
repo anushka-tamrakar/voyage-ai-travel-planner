@@ -16,18 +16,22 @@ class ItineraryService:
         if isinstance(raw_days, dict):
             days = raw_days.get("days", [])
             recommendations = raw_days.get("recommendations", {"hotels": [], "dining": []})
+            budget_summary = raw_days.get("budget_summary")
         elif isinstance(raw_days, list):
             days = raw_days
             recommendations = record.get("recommendations", {"hotels": [], "dining": []})
+            budget_summary = record.get("budget_summary")
         else:
             days = []
             recommendations = {"hotels": [], "dining": []}
+            budget_summary = None
 
         return {
             "id": record.get("id"),
             "trip_id": record.get("trip_id"),
             "days": days,
             "recommendations": recommendations,
+            "budget_summary": budget_summary,
             "summary": record.get("summary", ""),
             "created_at": record.get("created_at"),
         }
@@ -43,10 +47,11 @@ class ItineraryService:
         itinerary_id = str(uuid.uuid4())
         now = datetime.now(timezone.utc).isoformat()
 
-        # Pack days and recommendations into days JSONB to maintain schema compatibility
+        # Pack days, recommendations, and budget_summary into days JSONB to maintain schema compatibility
         packed_days = {
             "days": generated_data.get("days", []),
             "recommendations": generated_data.get("recommendations", {"hotels": [], "dining": []}),
+            "budget_summary": generated_data.get("budget_summary"),
         }
 
         record = {
@@ -94,6 +99,7 @@ class ItineraryService:
         packed_days = {
             "days": generated_data.get("days", []),
             "recommendations": generated_data.get("recommendations", {"hotels": [], "dining": []}),
+            "budget_summary": generated_data.get("budget_summary"),
         }
 
         record = {
@@ -176,6 +182,7 @@ class ItineraryService:
         packed_days = {
             "days": latest_itin.get("days", []),
             "recommendations": recs,
+            "budget_summary": latest_itin.get("budget_summary"),
         }
         supabase = get_supabase()
         supabase.table("itineraries").update({"days": packed_days}).eq("id", latest_itin["id"]).execute()

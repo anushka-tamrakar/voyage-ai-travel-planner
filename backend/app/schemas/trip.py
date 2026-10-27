@@ -48,7 +48,21 @@ class DayItinerary(BaseModel):
     day: int = Field(..., description="Day number (1, 2, ...)")
     date: Optional[str] = Field(None, description="Calendar date for this day")
     theme: Optional[str] = Field(None, description="Theme or focus for the day")
+    day_cost: Optional[float] = None
     activities: List[ActivityItem] = Field(default_factory=list)
+
+
+class BudgetSummary(BaseModel):
+    total_estimated_cost: float
+    total_budget: float
+    remaining_budget: float
+    within_budget: bool
+    daily_cap: float
+    per_day_costs: List[float] = Field(default_factory=list)
+    per_category_costs: Dict[str, float] = Field(default_factory=dict)
+    budget_note: List[str] = Field(default_factory=list)
+    below_minimum: bool = False
+    minimum_required: Optional[float] = None
 
 
 class ItineraryResponse(BaseModel):
@@ -57,6 +71,7 @@ class ItineraryResponse(BaseModel):
     days: List[DayItinerary]
     recommendations: Optional[Recommendations] = None
     summary: Optional[str] = None
+    budget_summary: Optional[BudgetSummary] = None
     created_at: Optional[str] = None
 
 
@@ -94,24 +109,30 @@ class CreateTripRequest(BaseModel):
         except Exception:
             pass
 
-        if self.total_budget is not None and not self.budget_per_day:
-            daily_val = max(1, round(self.total_budget / num_days))
+        if self.total_budget is not None:
+            if self.total_budget <= 0:
+                raise ValueError("Total trip budget must be greater than 0")
+            daily_val = round(self.total_budget / num_days, 2)
             self.budget_per_day = f"₹{daily_val}"
         elif self.budget_per_day:
             s = str(self.budget_per_day).strip()
             if not s.startswith("₹") and not s.startswith("$") and s.replace(".", "", 1).isdigit():
                 self.budget_per_day = f"₹{s}"
-            if self.total_budget is None:
-                numeric_val = "".join(ch for ch in s if ch.isdigit() or ch == ".")
-                if numeric_val:
-                    try:
-                        self.total_budget = float(numeric_val) * num_days
-                    except Exception:
-                        pass
+            numeric_val = "".join(ch for ch in s if ch.isdigit() or ch == ".")
+            if numeric_val:
+                try:
+                    computed_tot = float(numeric_val) * num_days
+                    if computed_tot <= 0:
+                        raise ValueError("Total trip budget must be greater than 0")
+                    self.total_budget = computed_tot
+                except ValueError:
+                    raise
+                except Exception:
+                    pass
+            if not self.total_budget or self.total_budget <= 0:
+                raise ValueError("Total trip budget must be greater than 0")
         else:
-            self.budget_per_day = "₹3000"
-            if self.total_budget is None:
-                self.total_budget = 3000.0 * num_days
+            raise ValueError("Total trip budget must be provided")
         return self
 
 
