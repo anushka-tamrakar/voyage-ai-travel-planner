@@ -378,6 +378,7 @@ export const ItineraryView = () => {
         varianceINR,
         isUnderBudget: withinBudget,
         perDayCosts: backendBudget.per_day_costs || Array(numDays).fill(dailyCapINR),
+        perDayBreakdown: backendBudget.per_day_breakdown || null,
         perCategoryCosts: catCosts,
         budgetNote: backendBudget.budget_note || [],
         belowMinimum: Boolean(backendBudget.below_minimum),
@@ -421,6 +422,7 @@ export const ItineraryView = () => {
       varianceINR: Math.abs(tripTotalINR - targetBudgetTripINR),
       isUnderBudget: tripTotalINR <= targetBudgetTripINR,
       perDayCosts: Array(numDays).fill(realDailyCapINR),
+      perDayBreakdown: null,
       perCategoryCosts: {
         stay: stayTotalINR,
         food: foodTotalINR,
@@ -758,6 +760,34 @@ export const ItineraryView = () => {
                       </span>
                     </div>
                   </div>
+
+                  {/* Itemized Cost Breakdown Per Day Pill Bar */}
+                  {(currentDay.cost_breakdown || budgetSummary?.perDayBreakdown?.[activeDayIndex]) && (
+                    <div className="flex flex-wrap items-center gap-2 text-xs bg-slate-50 dark:bg-slate-900/60 p-3 rounded-2xl border border-slate-200/80 dark:border-slate-800">
+                      <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mr-1">
+                        Daily Itemized Cost:
+                      </span>
+                      {(() => {
+                        const cb = currentDay.cost_breakdown || budgetSummary?.perDayBreakdown?.[activeDayIndex] || {};
+                        return (
+                          <>
+                            <span className="px-2.5 py-1 rounded-xl bg-purple-50 dark:bg-purple-950/50 text-purple-700 dark:text-purple-300 font-semibold text-xs border border-purple-200/60 dark:border-purple-800/60">
+                              🏨 Stay: {formatCurrency(cb.stay || 0, currentCurrency, exchangeRates)}
+                            </span>
+                            <span className="px-2.5 py-1 rounded-xl bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 font-semibold text-xs border border-emerald-200/60 dark:border-emerald-800/60">
+                              🍽️ Food: {formatCurrency(cb.food || 0, currentCurrency, exchangeRates)}
+                            </span>
+                            <span className="px-2.5 py-1 rounded-xl bg-blue-50 dark:bg-blue-950/50 text-blue-700 dark:text-blue-300 font-semibold text-xs border border-blue-200/60 dark:border-blue-800/60">
+                              🎟️ Sights: {formatCurrency(cb.activities || 0, currentCurrency, exchangeRates)}
+                            </span>
+                            <span className="px-2.5 py-1 rounded-xl bg-amber-50 dark:bg-amber-950/50 text-amber-700 dark:text-amber-300 font-semibold text-xs border border-amber-200/60 dark:border-amber-800/60">
+                              🚖 Transit: {formatCurrency(cb.transport || 0, currentCurrency, exchangeRates)}
+                            </span>
+                          </>
+                        );
+                      })()}
+                    </div>
+                  )}
 
                   {/* Activities list with EXACT place names and area (Requirement 3) */}
                   <div className="relative pl-6 sm:pl-8 border-l-2 border-brand-200 dark:border-brand-800 space-y-6 ml-3 sm:ml-4">
@@ -1355,6 +1385,48 @@ export const ItineraryView = () => {
                     </div>
                   );
                 })}
+              </div>
+
+              {/* Itemized Cost Breakdown Per Day Table */}
+              <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 sm:p-8 border border-slate-200/80 dark:border-slate-800 shadow-sm space-y-4">
+                <h4 className="font-bold text-base text-slate-900 dark:text-white flex items-center gap-2">
+                  <span>📅 Itemized Daily Cost Breakdown</span>
+                </h4>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs text-left">
+                    <thead className="bg-slate-50 dark:bg-slate-800/60 text-slate-700 dark:text-slate-300 font-bold uppercase text-[10px]">
+                      <tr>
+                        <th className="py-2.5 px-3 rounded-l-xl">Day</th>
+                        <th className="py-2.5 px-3">🏨 Stay / Lodging</th>
+                        <th className="py-2.5 px-3">🍽️ Dining & Food</th>
+                        <th className="py-2.5 px-3">🎟️ Sights & Tickets</th>
+                        <th className="py-2.5 px-3">🚖 Local Transit</th>
+                        <th className="py-2.5 px-3 text-right rounded-r-xl">Total Day Spend</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                      {days.map((d, dIdx) => {
+                        const b = d.cost_breakdown || budgetSummary?.perDayBreakdown?.[dIdx] || {
+                          stay: Math.round(budgetSummary.stayTotalINR / days.length),
+                          food: Math.round(budgetSummary.foodTotalINR / days.length),
+                          activities: Math.round(budgetSummary.activitiesTotalINR / days.length),
+                          transport: Math.round(budgetSummary.transportTotalINR / days.length),
+                          total: d.day_cost || budgetSummary?.perDayCosts?.[dIdx] || 0,
+                        };
+                        return (
+                          <tr key={dIdx} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/30">
+                            <td className="py-3 px-3 font-bold text-slate-900 dark:text-white">Day {d.day || dIdx + 1}</td>
+                            <td className="py-3 px-3 text-purple-600 dark:text-purple-400 font-medium">{formatCurrency(b.stay, currentCurrency, exchangeRates)}</td>
+                            <td className="py-3 px-3 text-emerald-600 dark:text-emerald-400 font-medium">{formatCurrency(b.food, currentCurrency, exchangeRates)}</td>
+                            <td className="py-3 px-3 text-blue-600 dark:text-blue-400 font-medium">{formatCurrency(b.activities, currentCurrency, exchangeRates)}</td>
+                            <td className="py-3 px-3 text-amber-600 dark:text-amber-400 font-medium">{formatCurrency(b.transport, currentCurrency, exchangeRates)}</td>
+                            <td className="py-3 px-3 text-right font-extrabold text-slate-900 dark:text-white">{formatCurrency(b.total, currentCurrency, exchangeRates)}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             </div>
           )}

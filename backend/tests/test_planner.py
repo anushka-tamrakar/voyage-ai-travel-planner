@@ -6,6 +6,9 @@ import unittest
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from app.services.planner import (
+    VisitedTracker,
+    extract_significant_tokens,
+    normalize_name,
     cluster_places_kmeans,
     order_nearest_neighbor,
     get_time_slots,
@@ -67,16 +70,38 @@ def fake_ai_annotate(places):
         annotations[name.lower()] = {
             "description": f"Unique exploration of {name} offering distinctive {cat} insights situated in {area} (id-{idx}).",
             "travel_tip": f"Recommended insider tip {idx + 1} for visiting {name} in {area}.",
-            "entry_fee_inr": (idx % 4) * 20.0,  # 0, 20, 40, 60
+            "entry_fee_inr": (idx % 4) * 25.0,  # 0, 25, 50, 75
         }
     return annotations
 
 
 class TestPlanner(unittest.TestCase):
+    def test_visited_tracker_zero_duplicates(self):
+        """Test VisitedTracker prevents duplicates by name, tokens, and coordinates."""
+        tracker = VisitedTracker()
+        p1 = {"place_name": "Rajwada Palace", "lat": 22.7196, "lng": 75.8577}
+        self.assertFalse(tracker.is_visited(p1))
+        tracker.mark_visited(p1)
+
+        # Exact name
+        self.assertTrue(tracker.is_visited(p1))
+
+        # Substring / variant name
+        p1_var = {"place_name": "Rajwada Palace Indore", "lat": 22.7196, "lng": 75.8577}
+        self.assertTrue(tracker.is_visited(p1_var))
+
+        # Close proximity (< 180m)
+        p1_close = {"place_name": "Old Gate", "lat": 22.7197, "lng": 75.8578}
+        self.assertTrue(tracker.is_visited(p1_close))
+
+        # Distinct venue far away
+        p2 = {"place_name": "Lal Bagh Palace", "lat": 22.6983, "lng": 75.8458}
+        self.assertFalse(tracker.is_visited(p2))
+
     def run_pipeline_for_scenario(self, days: int, pace: str, total_budget: float):
         stops_per_day = 2 if pace == "relaxed" else (3 if pace == "moderate" else 4)
 
-        # 1. Cluster places
+        # 1. Cluster places with spatial dispersion and zero-duplicate enforcement
         clustered = cluster_places_kmeans(FAKE_INDORE_PLACES, days, stops_per_day, seed=42)
 
         # Verify cluster count and sizes
@@ -87,8 +112,9 @@ class TestPlanner(unittest.TestCase):
         all_stops = [p for group in clustered for p in group]
         place_names = [p["place_name"] for p in all_stops]
 
-        # Assert no place appears twice across the days
+        # Directive 1: Zero Duplicate Rule across ALL days and slots
         self.assertEqual(len(place_names), len(set(place_names)), "Duplicate places found across trip days!")
+        self.assertEqual(len(place_names), days * stops_per_day)
 
         # 2. Annotate with fake AI
         annotations = fake_ai_annotate(all_stops)
@@ -104,8 +130,8 @@ class TestPlanner(unittest.TestCase):
             slots = get_time_slots(len(ordered_stops))
             theme = generate_day_theme(day_num, ordered_stops)
 
-            # Assert theme does not contain "Best of"
-            self.assertNotIn("Best of", theme, f"Day theme contains 'Best of': {theme}")
+            # Assert theme does not contain placeholder strings
+            self.assertNotIn("Best of", theme)
 
             activities = []
             for s_idx, stop in enumerate(ordered_stops):
@@ -113,8 +139,7 @@ class TestPlanner(unittest.TestCase):
                 c_title = stop.get("category_title", "Highlight")
                 title = f"{c_title}: {p_name}"
 
-                # Assert title does not contain "(Day"
-                self.assertNotIn("(Day", title, f"Title contains '(Day': {title}")
+                self.assertNotIn("(Day", title)
 
                 ann = annotations.get(p_name.lower(), {})
                 desc = ann.get("description", f"Description of {p_name}")
@@ -144,10 +169,10 @@ class TestPlanner(unittest.TestCase):
             })
 
         # Assert no two titles or descriptions are identical
-        self.assertEqual(len(all_titles), len(set(all_titles)), "Duplicate activity titles found!")
-        self.assertEqual(len(all_descriptions), len(set(all_descriptions)), "Duplicate descriptions found!")
+        self.assertEqual(len(all_titles), len(set(all_titles)))
+        self.assertEqual(len(all_descriptions), len(set(all_descriptions)))
 
-        # 4. Calculate budget
+        # 4. Calculate budget (Directive 2: Strict Budget Compliance)
         b_summary = calculate_budget(
             days_data=days_data,
             total_budget=total_budget,
@@ -156,47 +181,90 @@ class TestPlanner(unittest.TestCase):
 
         total_est = b_summary["total_estimated_cost"]
         within_budget = b_summary["within_budget"]
-        below_min = b_summary["below_minimum"]
+        remaining_budget = b_summary["remaining_budget"]
         daily_cap = b_summary["daily_cap"]
         per_day_costs = b_summary["per_day_costs"]
+        per_day_breakdown = b_summary["per_day_breakdown"]
 
-        # Assert total_estimated_cost <= total_budget unless below_minimum is True
-        if not below_min:
-            self.assertLessEqual(total_est, total_budget)
-            self.assertTrue(within_budget)
-        else:
-            self.assertFalse(within_budget)
+        # DIRECTIVE 2 ASSERTIONS:
+        # 1. Total Estimated Cost <= Maximum User Budget (STRICT HARD-CAP)
+        self.assertLessEqual(total_est, total_budget, f"Hard cap violated: {total_est} > {total_budget}")
+        self.assertTrue(within_budget)
 
-        # Assert daily_cap == total_budget / days
+        # 2. Target cost margin is 85% to 95% of total budget
+        cost_ratio = total_est / total_budget
+        self.assertGreaterEqual(cost_ratio, 0.849, f"Cost margin below 85%: {cost_ratio:.2%}")
+        self.assertLessEqual(cost_ratio, 0.951, f"Cost margin exceeds 95%: {cost_ratio:.2%}")
+
+        # 3. Incidental buffer is 5% to 15% of total budget
+        buffer_ratio = remaining_budget / total_budget
+        self.assertGreaterEqual(buffer_ratio, 0.049, f"Buffer below 5%: {buffer_ratio:.2%}")
+        self.assertLessEqual(buffer_ratio, 0.151, f"Buffer exceeds 15%: {buffer_ratio:.2%}")
+
+        # 4. Itemized line item sum equals total_estimated_cost
+        cat_costs = b_summary["per_category_costs"]
+        sum_cats = cat_costs["stay"] + cat_costs["food"] + cat_costs["activities"] + cat_costs["transport"]
+        self.assertAlmostEqual(sum_cats, total_est, places=2)
+
+        # 5. Itemized daily costs sum exactly equals total_estimated_cost
+        self.assertEqual(len(per_day_costs), days)
+        self.assertEqual(len(per_day_breakdown), days)
+        self.assertAlmostEqual(sum(per_day_costs), total_est, places=2)
+
+        # 6. Each day has itemized breakdown (Stay, Food, Activities, Transit)
+        for d_idx, d_breakdown in enumerate(per_day_breakdown):
+            self.assertEqual(d_breakdown["day"], d_idx + 1)
+            self.assertIn("stay", d_breakdown)
+            self.assertIn("food", d_breakdown)
+            self.assertIn("activities", d_breakdown)
+            self.assertIn("transport", d_breakdown)
+            d_sum = d_breakdown["stay"] + d_breakdown["food"] + d_breakdown["activities"] + d_breakdown["transport"]
+            self.assertAlmostEqual(d_sum, d_breakdown["total"], places=2)
+
+        # 7. Daily cap is total_budget / days
         expected_daily_cap = round(total_budget / days, 2)
         self.assertEqual(daily_cap, expected_daily_cap)
-
-        # Assert sum(per_day_costs) == total_estimated_cost
-        self.assertAlmostEqual(sum(per_day_costs), total_est, places=2)
 
         return b_summary
 
     def test_2_days_relaxed(self):
-        # 2 days relaxed with budget 10,000
         summary = self.run_pipeline_for_scenario(days=2, pace="relaxed", total_budget=10000.0)
-        self.assertFalse(summary["below_minimum"])
+        self.assertTrue(summary["within_budget"])
 
     def test_3_days_moderate_budget_3000(self):
-        # 3 days moderate with tight budget 3,000
         summary = self.run_pipeline_for_scenario(days=3, pace="moderate", total_budget=3000.0)
-        # Even with tight budget, engine applies ladder and verifies condition
-        if summary["below_minimum"]:
-            self.assertGreater(summary["minimum_required"], 0)
+        self.assertTrue(summary["within_budget"])
+        self.assertLessEqual(summary["total_estimated_cost"], 3000.0)
 
     def test_5_days_moderate(self):
-        # 5 days moderate with budget 20,000
         summary = self.run_pipeline_for_scenario(days=5, pace="moderate", total_budget=20000.0)
-        self.assertFalse(summary["below_minimum"])
+        self.assertTrue(summary["within_budget"])
+        self.assertLessEqual(summary["total_estimated_cost"], 20000.0)
 
-    def test_7_days_fast(self):
-        # 7 days fast with budget 35,000
+    def test_7_days_fast_28_stops(self):
+        # 7 days with fast pace (4 stops/day = 28 stops)
         summary = self.run_pipeline_for_scenario(days=7, pace="fast", total_budget=35000.0)
-        self.assertFalse(summary["below_minimum"])
+        self.assertTrue(summary["within_budget"])
+        self.assertLessEqual(summary["total_estimated_cost"], 35000.0)
+
+    def test_over_budget_activity_replacement(self):
+        """Test that premium/expensive activities are replaced with free alternatives when budget is tight."""
+        # 2 activities with high fees on a very low budget of 1500
+        days_data = [{
+            "day": 1,
+            "activities": [
+                {"place_name": "Premium Museum", "lat": 22.71, "lng": 75.85, "entry_fee_inr": 800.0},
+                {"place_name": "Royal Observatory", "lat": 22.72, "lng": 75.86, "entry_fee_inr": 600.0},
+            ]
+        }]
+        res = calculate_budget(days_data=days_data, total_budget=1500.0)
+        self.assertTrue(res["within_budget"])
+        self.assertLessEqual(res["total_estimated_cost"], 1500.0)
+        # Verify activities got replaced or clamped
+        fees = [a["entry_fee_inr"] for a in days_data[0]["activities"]]
+        costs = [a["estimated_cost"] for a in days_data[0]["activities"]]
+        self.assertTrue(any(f == 0.0 for f in fees))
+        self.assertIn("Free", costs)
 
     def test_placeholder_strings_absent_from_source(self):
         forbidden_strings = [
@@ -214,7 +282,6 @@ class TestPlanner(unittest.TestCase):
 
         found_violations = []
         for root, dirs, files in os.walk(workspace_root):
-            # Skip virtual environments, node_modules, git, build artifacts, test file itself, logs
             if any(skip in root for skip in ["venv", "node_modules", ".git", "dist", "brain", ".gemini", "tests"]):
                 continue
             for f in files:

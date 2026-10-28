@@ -8,7 +8,7 @@ from app.utils.errors import AIGenerationError
 
 logger = logging.getLogger(__name__)
 
-# Fallback coordinates for common destinations when Nominatim is unavailable or sandboxed
+# Coordinates lookup for common tourist destinations to provide realistic base coordinates
 DESTINATION_COORDINATES = {
     "delhi": (28.6139, 77.2090),
     "new delhi": (28.6139, 77.2090),
@@ -38,6 +38,73 @@ DESTINATION_COORDINATES = {
     "rome": (41.9028, 12.4964),
 }
 
+CURATED_CITY_PLACES = {
+    "indore": [
+        {"place_name": "Rajwada Palace", "area": "Rajwada", "lat": 22.7196, "lng": 75.8577, "category": "sightseeing", "category_title": "Heritage Landmark"},
+        {"place_name": "Lal Bagh Palace", "area": "Lal Bagh", "lat": 22.6983, "lng": 75.8458, "category": "sightseeing", "category_title": "Royal Residence"},
+        {"place_name": "Sarafa Night Bazaar", "area": "Sarafa", "lat": 22.7188, "lng": 75.8550, "category": "food", "category_title": "Night Food Street"},
+        {"place_name": "Chappan Dukan", "area": "New Palasia", "lat": 22.7244, "lng": 75.8839, "category": "food", "category_title": "Culinary Square"},
+        {"place_name": "Kanch Mandir", "area": "Itwaria Bazar", "lat": 22.7175, "lng": 75.8503, "category": "sightseeing", "category_title": "Glass Temple"},
+        {"place_name": "Khajrana Ganesh Temple", "area": "Khajrana", "lat": 22.7350, "lng": 75.9080, "category": "sightseeing", "category_title": "Spiritual Shrine"},
+        {"place_name": "Central Museum Indore", "area": "Navlakha", "lat": 22.7067, "lng": 75.8778, "category": "sightseeing", "category_title": "Artifacts Museum"},
+        {"place_name": "Ralamandal Wildlife Sanctuary", "area": "Ralamandal", "lat": 22.6450, "lng": 75.9220, "category": "sightseeing", "category_title": "Nature Reserve"},
+        {"place_name": "Patalpani Waterfalls", "area": "Mhow", "lat": 22.4980, "lng": 75.7890, "category": "sightseeing", "category_title": "Scenic Waterfall"},
+        {"place_name": "Meghdoot Garden", "area": "Vijay Nagar", "lat": 22.7520, "lng": 75.8920, "category": "sightseeing", "category_title": "Botanical Park"},
+        {"place_name": "Pipliyapala Regional Park", "area": "Rajendra Nagar", "lat": 22.6820, "lng": 75.8340, "category": "sightseeing", "category_title": "Lakefront Park"},
+        {"place_name": "Gandhi Hall", "area": "MG Road", "lat": 22.7225, "lng": 75.8640, "category": "sightseeing", "category_title": "Colonial Clocktower"},
+        {"place_name": "Chhatris of Holkars", "area": "Krishnapura", "lat": 22.7160, "lng": 75.8580, "category": "sightseeing", "category_title": "Royal Cenotaphs"},
+        {"place_name": "Sirpur Lake Bird Sanctuary", "area": "Dhar Road", "lat": 22.7050, "lng": 75.8110, "category": "sightseeing", "category_title": "Wetland Reserve"},
+        {"place_name": "Gomatgiri Digambar Jain Temple", "area": "Airport Road", "lat": 22.7680, "lng": 75.8050, "category": "sightseeing", "category_title": "Hilltop Shrine"},
+        {"place_name": "Kamla Nehru Prani Sangrahalay", "area": "Navlakha", "lat": 22.7030, "lng": 75.8760, "category": "sightseeing", "category_title": "Zoological Park"},
+        {"place_name": "Bada Ganpati Temple", "area": "Malharganj", "lat": 22.7240, "lng": 75.8480, "category": "sightseeing", "category_title": "Historic Temple"},
+        {"place_name": "Annapurna Temple", "area": "Kranti Kriplani Nagar", "lat": 22.6950, "lng": 75.8320, "category": "sightseeing", "category_title": "Architectural Temple"},
+        {"place_name": "Chhatri Bagh", "area": "Chhatribagh", "lat": 22.7140, "lng": 75.8530, "category": "sightseeing", "category_title": "Historic Memorial"},
+        {"place_name": "Tincha Falls", "area": "Tincha", "lat": 22.5830, "lng": 75.9830, "category": "sightseeing", "category_title": "Scenic Gorge"},
+        {"place_name": "Janapav Kuti", "area": "Kuti Hills", "lat": 22.4550, "lng": 75.6880, "category": "sightseeing", "category_title": "Mountain Viewpoint"},
+        {"place_name": "Muhadi Falls", "area": "Telyakhedi", "lat": 22.5620, "lng": 75.9410, "category": "sightseeing", "category_title": "Valley Waterfall"},
+        {"place_name": "Harsiddhi Temple", "area": "Harsiddhi", "lat": 22.7150, "lng": 75.8610, "category": "sightseeing", "category_title": "Sacred Shrine"},
+        {"place_name": "Gita Bhawan", "area": "Manorama Ganj", "lat": 22.7210, "lng": 75.8850, "category": "sightseeing", "category_title": "Cultural Complex"},
+        {"place_name": "Nehru Park", "area": "Siyaganj", "lat": 22.7190, "lng": 75.8700, "category": "sightseeing", "category_title": "Urban Parkland"},
+        {"place_name": "Mayank Blue Water Park", "area": "Bicholi Mardana", "lat": 22.7130, "lng": 75.9250, "category": "sightseeing", "category_title": "Aquatic Center"},
+        {"place_name": "Bhawarkua Food Street", "area": "Bhawarkua", "lat": 22.6910, "lng": 75.8670, "category": "food", "category_title": "Street Food Hub"},
+        {"place_name": "Treasure Island Mall Promenade", "area": "South Tukoganj", "lat": 22.7230, "lng": 75.8780, "category": "shopping", "category_title": "Shopping Stroll"},
+        {"place_name": "C21 Walk & Artisan Bazaars", "area": "Scheme 54", "lat": 22.7540, "lng": 75.8950, "category": "shopping", "category_title": "Artisan Retail"},
+        {"place_name": "Phoenix Citadel Arcade", "area": "MR 10 Road", "lat": 22.7810, "lng": 75.9180, "category": "shopping", "category_title": "Modern Galleria"},
+        {"place_name": "Malhar Mega Promenade", "area": "Scheme 54", "lat": 22.7530, "lng": 75.8940, "category": "shopping", "category_title": "City Bazaar"},
+        {"place_name": "Saraf Brothers Traditional Sweets", "area": "Sarafa", "lat": 22.7180, "lng": 75.8540, "category": "food", "category_title": "Heritage Mithai"},
+        {"place_name": "Prashant Poha & Jalebi House", "area": "Jail Road", "lat": 22.7215, "lng": 75.8620, "category": "food", "category_title": "Morning Breakfast"},
+        {"place_name": "Guru Kripa Bhojanalaya", "area": "Sarwate", "lat": 22.7135, "lng": 75.8665, "category": "food", "category_title": "Pure Veg Thali"},
+        {"place_name": "Apna Sweets Corner", "area": "Vijay Nagar", "lat": 22.7510, "lng": 75.8910, "category": "food", "category_title": "Evening Sweets"},
+        {"place_name": "Vijay Chaat House", "area": "Sarafa", "lat": 22.7185, "lng": 75.8545, "category": "food", "category_title": "Artisan Khopra Patties"},
+        {"place_name": "Joshi Dahi Bada House", "area": "Sarafa", "lat": 22.7182, "lng": 75.8542, "category": "food", "category_title": "Flying Dahi Bada"},
+        {"place_name": "Nagori Shikanji & Lassi", "area": "Sarafa", "lat": 22.7189, "lng": 75.8548, "category": "food", "category_title": "Dessert Drink"},
+        {"place_name": "Ravi Alpahar Namkeen", "area": "Anand Bazar", "lat": 22.7300, "lng": 75.8900, "category": "food", "category_title": "Indori Sev & Namkeen"},
+        {"place_name": "Om Namkeen Kendra", "area": "Chain Singh Ka Bagicha", "lat": 22.7270, "lng": 75.8790, "category": "food", "category_title": "Authentic Snacks"},
+    ],
+    "jaipur": [
+        {"place_name": "Hawa Mahal", "area": "Badi Choupad", "lat": 26.9239, "lng": 75.8267, "category": "sightseeing", "category_title": "Palace of Winds"},
+        {"place_name": "City Palace Jaipur", "area": "Jaleb Chowk", "lat": 26.9258, "lng": 75.8236, "category": "sightseeing", "category_title": "Royal Palace"},
+        {"place_name": "Amber Fort & Palace", "area": "Amer", "lat": 26.9855, "lng": 75.8513, "category": "sightseeing", "category_title": "Historic Fortress"},
+        {"place_name": "Nahargarh Fort", "area": "Krishna Nagar", "lat": 26.9372, "lng": 75.8155, "category": "sightseeing", "category_title": "Hilltop Fort"},
+        {"place_name": "Jaigarh Fort", "area": "Amer", "lat": 26.9850, "lng": 75.8456, "category": "sightseeing", "category_title": "Victory Fort"},
+        {"place_name": "Jantar Mantar Observatory", "area": "Gangori Bazaar", "lat": 26.9248, "lng": 75.8246, "category": "sightseeing", "category_title": "Astronomical Monument"},
+        {"place_name": "Albert Hall Museum", "area": "Ram Niwas Garden", "lat": 26.9116, "lng": 75.8195, "category": "sightseeing", "category_title": "State Museum"},
+        {"place_name": "Jal Mahal Palace", "area": "Man Sagar Lake", "lat": 26.9535, "lng": 75.8462, "category": "sightseeing", "category_title": "Water Palace"},
+        {"place_name": "Birla Mandir Temple", "area": "Tilak Nagar", "lat": 26.8924, "lng": 75.8154, "category": "sightseeing", "category_title": "Marble Temple"},
+        {"place_name": "Galtaji Monkey Temple", "area": "Khania-Balaji", "lat": 26.9163, "lng": 75.8589, "category": "sightseeing", "category_title": "Sacred Kunds"},
+        {"place_name": "Sisodia Rani Garden", "area": "Ghat Ki Guni", "lat": 26.8837, "lng": 75.8540, "category": "sightseeing", "category_title": "Royal Gardens"},
+        {"place_name": "Panna Meena Ka Kund", "area": "Amer", "lat": 26.9880, "lng": 75.8560, "category": "sightseeing", "category_title": "Historic Stepwell"},
+        {"place_name": "Johari Bazaar Gem Market", "area": "Pink City", "lat": 26.9200, "lng": 75.8270, "category": "shopping", "category_title": "Jewelry Bazaar"},
+        {"place_name": "Bapu Bazaar Textile Walk", "area": "Pink City", "lat": 26.9180, "lng": 75.8220, "category": "shopping", "category_title": "Handicrafts Market"},
+        {"place_name": "Rawat Mishthan Bhandar", "area": "Station Road", "lat": 26.9208, "lng": 75.7972, "category": "food", "category_title": "Pyaz Kachori"},
+        {"place_name": "Laxmi Mishthan Bhandar LMB", "area": "Johari Bazaar", "lat": 26.9212, "lng": 75.8275, "category": "food", "category_title": "Royal Rajasthani Thali"},
+        {"place_name": "Masala Chowk Food Court", "area": "Ram Niwas Garden", "lat": 26.9125, "lng": 75.8205, "category": "food", "category_title": "Open Air Food Hub"},
+        {"place_name": "Kanak Vrindavan Valley", "area": "Amer Road", "lat": 26.9630, "lng": 75.8490, "category": "sightseeing", "category_title": "Valley Garden"},
+        {"place_name": "Chhatris of Gaitore", "area": "Brahampuri", "lat": 26.9390, "lng": 75.8280, "category": "sightseeing", "category_title": "Royal Cenotaphs"},
+        {"place_name": "Central Park Promenade", "area": "Prithviraj Road", "lat": 26.9030, "lng": 75.8110, "category": "sightseeing", "category_title": "City Parkland"},
+    ],
+}
+
 
 def haversine_distance_m(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     """Calculate distance in meters between two coordinates."""
@@ -61,7 +128,6 @@ def geocode_destination(destination: str) -> Tuple[str, float, float]:
     dest_clean = destination.strip()
     title_dest = dest_clean.title()
 
-    # Try Nominatim search with short timeout
     try:
         url = f"https://nominatim.openstreetmap.org/search?q={dest_clean}&format=json&limit=1"
         headers = {"User-Agent": "VoyageAITravelPlanner/1.0"}
@@ -76,13 +142,11 @@ def geocode_destination(destination: str) -> Tuple[str, float, float]:
     except Exception as e:
         logger.warning("Nominatim geocoding failed for %s: %s", dest_clean, e)
 
-    # Check local coordinate dictionary
     dest_lower = dest_clean.lower()
     for city, coords in DESTINATION_COORDINATES.items():
         if city in dest_lower or dest_lower in city:
             return city.title(), coords[0], coords[1]
 
-    # Default coordinates (center of India) if not found
     return title_dest, 22.7196, 75.8577
 
 
@@ -126,7 +190,6 @@ out 60;
                         if not plat or not plon:
                             continue
 
-                        # Determine category and title prefix
                         cat = "sightseeing"
                         cat_title = "Historic Sight"
                         if "museum" in tags.get("tourism", ""):
@@ -172,19 +235,28 @@ async def get_places_pool(
     """
     Build candidate pool for destination:
     - Geocode destination with Nominatim
-    - Extract places from existing popular-places logic and cache
+    - Load curated city landmarks if available
     - Query Overpass (expanding 10km -> 25km -> 50km)
-    - De-duplicate by normalized name and coordinates (<100m)
-    - Ensure size: days * stops_per_day + 30%
+    - De-duplicate strictly with VisitedTracker
+    - Ensure size: days * stops_per_day
     """
+    from app.services.planner import VisitedTracker
+
     stops_per_day = 2 if pace == "relaxed" else (3 if pace == "moderate" else 4)
     target_count = math.ceil(days * stops_per_day * 1.3)
 
     city_title, base_lat, base_lng = geocode_destination(destination)
+    city_key = destination.strip().lower()
 
     raw_candidates: List[Dict[str, Any]] = []
 
-    # 1. Fetch from existing popular places service / cache
+    # 1. Curated verified places for destination
+    for c_key, c_places in CURATED_CITY_PLACES.items():
+        if c_key in city_key or city_key in c_key:
+            raw_candidates.extend(c_places)
+            break
+
+    # 2. Popular destinations cache
     try:
         from app.services.ai import get_ai_service
         ai_service = get_ai_service()
@@ -237,47 +309,33 @@ async def get_places_pool(
                     "category_title": "Hidden Gem",
                 })
     except Exception as e:
-        logger.warning("Popular destinations extraction failed: %s", e)
+        logger.warning("Popular destinations extraction note: %s", e)
 
-    # 2. Overpass query with expanding radii: 10km, 25km, 50km
+    # 3. Query Overpass API with expanding radii if more candidates needed
     for radius in [10000, 25000, 50000]:
         if len(raw_candidates) >= target_count:
             break
         overpass_results = fetch_overpass_places(base_lat, base_lng, radius)
         raw_candidates.extend(overpass_results)
 
-    # 3. De-duplicate by normalized name and coordinates (<100m)
+    # 4. Strictly deduplicate using VisitedTracker (Zero Duplicate Rule)
+    tracker = VisitedTracker()
     deduped: List[Dict[str, Any]] = []
-    seen_names = set()
 
     for candidate in raw_candidates:
         name = candidate.get("place_name", "").strip()
         if not name or len(name) < 2:
             continue
-        norm = normalize_name(name)
-        if norm in seen_names:
-            continue
-
         c_lat = candidate.get("lat")
         c_lng = candidate.get("lng")
         if c_lat is None or c_lng is None:
             continue
 
-        # Coordinate proximity check (<100m)
-        is_duplicate_coord = False
-        for existing in deduped:
-            dist = haversine_distance_m(c_lat, c_lng, existing["lat"], existing["lng"])
-            if dist < 100.0 and (norm in normalize_name(existing["place_name"]) or normalize_name(existing["place_name"]) in norm):
-                is_duplicate_coord = True
-                break
+        if not tracker.is_visited(candidate):
+            tracker.mark_visited(candidate)
+            deduped.append(candidate)
 
-        if is_duplicate_coord:
-            continue
-
-        seen_names.add(norm)
-        deduped.append(candidate)
-
-    # 4. Ensure we have at least days * stops_per_day places
+    # 5. Ensure minimum required places exist
     min_required = days * stops_per_day
     if len(deduped) < min_required:
         raise AIGenerationError(

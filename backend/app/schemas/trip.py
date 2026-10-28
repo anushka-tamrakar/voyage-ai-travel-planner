@@ -1,4 +1,4 @@
-from typing import List, Optional, Literal, Union
+from typing import List, Optional, Literal, Union, Dict, Any
 from datetime import datetime
 from pydantic import BaseModel, Field, field_validator, model_validator
 
@@ -49,6 +49,7 @@ class DayItinerary(BaseModel):
     date: Optional[str] = Field(None, description="Calendar date for this day")
     theme: Optional[str] = Field(None, description="Theme or focus for the day")
     day_cost: Optional[float] = None
+    cost_breakdown: Optional[Dict[str, float]] = None
     activities: List[ActivityItem] = Field(default_factory=list)
 
 
@@ -59,6 +60,7 @@ class BudgetSummary(BaseModel):
     within_budget: bool
     daily_cap: float
     per_day_costs: List[float] = Field(default_factory=list)
+    per_day_breakdown: Optional[List[Dict[str, Any]]] = None
     per_category_costs: Dict[str, float] = Field(default_factory=dict)
     budget_note: List[str] = Field(default_factory=list)
     below_minimum: bool = False
