@@ -6,6 +6,7 @@ const API_BASE_URL =
   (typeof window !== 'undefined' && window.location.origin.includes('localhost')
     ? 'http://localhost:8000'
     : 'https://travel-planner-backend-vuq8.onrender.com');
+    
 
 let inMemoryToken = null;
 
