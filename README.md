@@ -11,10 +11,10 @@ Full-stack AI SaaS generating geographically optimized travel itineraries with G
 - `GEMINI_API_KEY`: Google AI Studio Gemini API key
 - `GEMINI_MODEL`: `gemini-1.5-flash`
 - `ALLOW_ORIGINS`: Allowed CORS origins (`http://localhost:5173`)
-- `CORS_ORIGINS`: Comma-separated allowed frontend origins (e.g. `https://your-app.vercel.app`)
+- `CORS_ORIGINS`: Comma-separated allowed frontend origins (e.g. `https://voyage-ai-travel-planner-ywmc.vercel.app`)
 
 ### Frontend (`frontend/.env`)
-- `VITE_API_URL`: Backend URL (e.g. `https://your-backend.onrender.com` or `http://localhost:8000`)
+- `VITE_API_URL`: Backend URL (e.g. `https://travel-planner-backend-vuq8.onrender.com` or `https://travel-planner-backend-vuq8.onrender.com`)
 - `VITE_API_BASE_URL`: Legacy fallback backend URL (`http://localhost:8000`)
 
 ## Local Setup
@@ -48,5 +48,5 @@ npm run dev
 
 ### Frontend (Vercel)
 1. Import repository in Vercel with Root Directory set to `frontend`.
-2. Set Environment Variable `VITE_API_URL` to your production backend URL (e.g. `https://your-backend.onrender.com`).
-3. Deploy (SPA route fallback pre-configured in `vercel.json`).
+2. Set Environment Variable `VITE_API_URL` to your production backend URL (e.g. `https://travel-planner-backend-vuq8.onrender.com`).
+3. Deploy (SPA routing automatically handled by Vercel).
