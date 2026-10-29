@@ -14,8 +14,8 @@ class Settings(BaseSettings):
     SUPABASE_KEY: str = ""
     GEMINI_API_KEY: str = ""
     GEMINI_MODEL: str = "gemini-1.5-flash"
-    ALLOW_ORIGINS: str = "http://localhost:5173,http://localhost:3000"
-    CORS_ORIGINS: str = ""
+    ALLOW_ORIGINS: str = "https://voyage-ai-travel-planner-ywmc-ned4q7pyh-anushka-tamrakar.vercel.app,http://localhost:5173,http://localhost:3000"
+    CORS_ORIGINS: str = "https://voyage-ai-travel-planner-ywmc-ned4q7pyh-anushka-tamrakar.vercel.app"
     PORT: int = 8000
 
     model_config = SettingsConfigDict(
