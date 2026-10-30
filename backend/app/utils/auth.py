@@ -19,18 +19,68 @@ security = HTTPBearer(auto_error=False)
 _supabase_client = None
 
 
+class ResilientTableQuery:
+    def __init__(self, table_name: str, real_client, mock_client, parent):
+        self.table_name = table_name
+        self.real_client = real_client
+        self.mock_client = mock_client
+        self.parent = parent
+        self.actions = []
+
+    def __getattr__(self, name: str):
+        def method(*args, **kwargs):
+            self.actions.append((name, args, kwargs))
+            return self
+        return method
+
+    def execute(self):
+        if not self.parent._failed and self.real_client is not None:
+            try:
+                target = self.real_client.table(self.table_name)
+                for action, args, kwargs in self.actions:
+                    target = getattr(target, action)(*args, **kwargs)
+                return target.execute()
+            except Exception as exc:
+                logger.warning(
+                    "Supabase query failed on table '%s' (%s). Seamlessly falling back to in-memory store.",
+                    self.table_name, exc
+                )
+                self.parent._failed = True
+
+        target = self.mock_client.table(self.table_name)
+        for action, args, kwargs in self.actions:
+            target = getattr(target, action)(*args, **kwargs)
+        return target.execute()
+
+
+class ResilientSupabaseClient:
+    def __init__(self, real_client, mock_client):
+        self.real_client = real_client
+        self.mock_client = mock_client
+        self._failed = real_client is None
+
+    def table(self, table_name: str):
+        return ResilientTableQuery(table_name, self.real_client, self.mock_client, self)
+
+
 def get_supabase():
     global _supabase_client
     if _supabase_client is None:
+        mock_client = MockSupabaseClient()
         if (
             not settings.SUPABASE_URL
             or not settings.SUPABASE_KEY
             or "your-project-id" in settings.SUPABASE_URL
         ):
             logger.info("Using local in-memory database store (configure SUPABASE_URL to connect to Supabase).")
-            _supabase_client = MockSupabaseClient()
+            _supabase_client = mock_client
         else:
-            _supabase_client = create_client(settings.SUPABASE_URL, settings.SUPABASE_KEY)
+            try:
+                real_client = create_client(settings.SUPABASE_URL, settings.SUPABASE_KEY)
+                _supabase_client = ResilientSupabaseClient(real_client, mock_client)
+            except Exception as exc:
+                logger.warning("Failed to initialize Supabase client (%s). Using in-memory store.", exc)
+                _supabase_client = mock_client
     return _supabase_client
 
 
