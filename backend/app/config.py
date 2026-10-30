@@ -14,8 +14,8 @@ class Settings(BaseSettings):
     SUPABASE_KEY: str = ""
     GEMINI_API_KEY: str = ""
     GEMINI_MODEL: str = "gemini-1.5-flash"
-    ALLOW_ORIGINS: str = "https://voyage-ai-travel-planner-ywmc-ned4q7pyh-anushka-tamrakar.vercel.app,http://localhost:5173,http://localhost:3000"
-    CORS_ORIGINS: str = "https://voyage-ai-travel-planner-ywmc-ned4q7pyh-anushka-tamrakar.vercel.app"
+    ALLOW_ORIGINS: str = "https://voyage-ai-travel-planner-ywmc.vercel.app,http://localhost:5173,http://localhost:3000,http://127.0.0.1:5173"
+    CORS_ORIGINS: str = ""
     PORT: int = 8000
 
     model_config = SettingsConfigDict(
@@ -26,10 +26,21 @@ class Settings(BaseSettings):
 
     @property
     def cors_origins(self) -> List[str]:
-        raw = self.CORS_ORIGINS or self.ALLOW_ORIGINS
-        if not raw:
-            return ["*"]
-        return [origin.strip() for origin in raw.split(",") if origin.strip()]
+        defaults = [
+            "https://voyage-ai-travel-planner-ywmc.vercel.app",
+            "http://localhost:5173",
+            "http://localhost:3000",
+            "http://127.0.0.1:5173",
+            "http://127.0.0.1:3000",
+        ]
+        origins = list(defaults)
+        for raw in (self.ALLOW_ORIGINS, self.CORS_ORIGINS):
+            if raw:
+                for origin in raw.split(","):
+                    cleaned = origin.strip().rstrip("/")
+                    if cleaned and cleaned != "*" and cleaned not in origins:
+                        origins.append(cleaned)
+        return origins
 
 
 @lru_cache()

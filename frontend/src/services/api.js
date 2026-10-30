@@ -9,9 +9,15 @@ if (viteEnv.VITE_API_URL) {
   API_BASE_URL = viteEnv.VITE_API_URL;
 } else if (viteEnv.VITE_API_BASE_URL) {
   API_BASE_URL = viteEnv.VITE_API_BASE_URL;
-} else if (typeof window !== 'undefined' && window.location.origin.includes('localhost')) {
+} else if (
+  typeof window !== 'undefined' &&
+  (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
+) {
   API_BASE_URL = 'http://localhost:8000';
 }
+
+// Strip any trailing slashes to guarantee clean URL concatenation
+API_BASE_URL = API_BASE_URL.replace(/\/+$/, '');
 
 let inMemoryToken = null;
 
@@ -36,6 +42,7 @@ export const getAuthToken = () => {
 
 const api = axios.create({
   baseURL: API_BASE_URL,
+  timeout: 60000, // 60s timeout accommodates Render free-tier cold starts
   headers: {
     'Content-Type': 'application/json',
   },
@@ -59,11 +66,20 @@ api.interceptors.response.use(
   (error) => {
     if (error.response?.status === 401) {
       setAuthToken(null);
-      if (window.location.pathname !== '/login' && window.location.pathname !== '/register' && window.location.pathname !== '/') {
+      if (typeof window !== 'undefined' && window.location.pathname !== '/login' && window.location.pathname !== '/register' && window.location.pathname !== '/') {
         window.location.href = '/login';
       }
     }
-    const message = error.response?.data?.message || error.message || 'An unexpected error occurred';
+    let message = error.response?.data?.message || error.response?.data?.detail;
+    if (!message) {
+      if (error.code === 'ECONNABORTED' || error.message?.includes('timeout')) {
+        message = 'Request timed out. The backend server on Render may be waking up from sleep mode (takes ~45s). Please try again in a few seconds.';
+      } else if (!error.response && error.message === 'Network Error') {
+        message = 'Network Error: Unable to reach backend server. The Render service may be starting up, or CORS origin is blocked. Please wait a moment and try again.';
+      } else {
+        message = error.message || 'An unexpected error occurred';
+      }
+    }
     return Promise.reject(new Error(message));
   }
 );
