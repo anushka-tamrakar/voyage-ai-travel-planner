@@ -1,12 +1,17 @@
 import axios from 'axios';
 
-const API_BASE_URL =
-  import.meta.env.VITE_API_URL ||
-  import.meta.env.VITE_API_BASE_URL || 
-  (typeof window !== 'undefined' && window.location.origin.includes('localhost')
-    ? 'http://localhost:8000'
-    : 'https://travel-planner-backend-vuq8.onrender.com');
-    
+let API_BASE_URL = 'https://travel-planner-backend-vuq8.onrender.com';
+
+// Safely check for Vite environment variables without crashing in Node.js
+const viteEnv = (typeof import.meta !== 'undefined' && import.meta.env) || {};  
+
+if (viteEnv.VITE_API_URL) {
+  API_BASE_URL = viteEnv.VITE_API_URL;
+} else if (viteEnv.VITE_API_BASE_URL) {
+  API_BASE_URL = viteEnv.VITE_API_BASE_URL;
+} else if (typeof window !== 'undefined' && window.location.origin.includes('localhost')) {
+  API_BASE_URL = 'http://localhost:8000';
+}
 
 let inMemoryToken = null;
 
