@@ -465,6 +465,13 @@ REQUIREMENTS:
             except Exception as rec_err:
                 logger.warning("Recommendations generation note: %s", rec_err)
 
+            # Ensure each day also has stay_recommendation and dining_recommendations attached
+            for d_idx, d in enumerate(days_data):
+                if recs.get("hotels"):
+                    d["stay_recommendation"] = recs["hotels"][d_idx % len(recs["hotels"])]
+                if recs.get("dining"):
+                    d["dining_recommendations"] = [recs["dining"][d_idx % len(recs["dining"])]]
+
             return {
                 "summary": f"Personalized {days_count}-day travel itinerary for {city_title} curated for a {vibe} experience.",
                 "days": days_data,
@@ -500,14 +507,23 @@ REQUIREMENTS:
     ) -> Dict[str, Any]:
         dest = trip_data.get("destination", "Destination").title()
         base_lat, base_lng = self._get_base_coordinates(dest)
-        stay_budget = float(budget_prefs.get("stay_budget_per_night") or trip_data.get("stay_budget_per_night") or 2500)
-        food_budget = float(budget_prefs.get("food_budget_per_meal") or trip_data.get("food_budget_per_meal") or 400)
+
+        total_b = float(trip_data.get("total_budget") or 12000)
+        days_c = max(1, int(trip_data.get("days_count") or len(trip_data.get("days") or []) or 3))
+        daily_cap = total_b / days_c
+
+        raw_stay = float(budget_prefs.get("stay_budget_per_night") or trip_data.get("stay_budget_per_night") or (daily_cap * 0.40))
+        raw_food = float(budget_prefs.get("food_budget_per_meal") or trip_data.get("food_budget_per_meal") or (daily_cap * 0.10))
+
+        # Hard-cap recommendations so they strictly match the user budget
+        stay_budget = min(raw_stay, max(300.0, daily_cap * 0.45))
+        food_budget = min(raw_food, max(50.0, daily_cap * 0.15))
         stay_type = (budget_prefs.get("stay_type") or trip_data.get("stay_type") or "Hotel").capitalize()
         diet = (budget_prefs.get("diet") or trip_data.get("diet") or "Local Flavors").capitalize()
 
-        b_price = max(500, int(stay_budget * 0.75))
+        b_price = max(250, int(stay_budget * 0.75))
         m_price = int(stay_budget)
-        p_price = int(stay_budget * 1.18)
+        p_price = int(stay_budget * 1.15)
 
         hotels = [
             {
