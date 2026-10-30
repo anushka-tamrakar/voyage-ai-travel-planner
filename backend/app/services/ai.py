@@ -143,26 +143,40 @@ class GeminiAIService(BaseAIService):
         return (22.7196, 75.8577)
 
     async def _call_gemini_rest(self, prompt: str, system_inst: str = SYSTEM_PROMPT) -> str:
-        """Official REST endpoint call."""
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/{self.model}:generateContent?key={self.api_key}"
+        """Official REST endpoint call with model and version fallback."""
+        clean_model = self.model.replace("models/", "")
+        candidate_models = [clean_model, f"{clean_model}-latest", "gemini-1.5-flash-latest", "gemini-1.5-pro", "gemini-2.0-flash-exp"]
+        seen = set()
+        models_to_try = [m for m in candidate_models if not (m in seen or seen.add(m))]
+
         headers = {"Content-Type": "application/json"}
         payload = {
             "contents": [{"parts": [{"text": prompt}]}],
             "systemInstruction": {"parts": [{"text": system_inst}]},
             "generationConfig": {"responseMimeType": "application/json"}
         }
-        async with httpx.AsyncClient(timeout=45.0) as client:
-            resp = await client.post(url, headers=headers, json=payload)
-            if resp.status_code != 200:
-                raise AIGenerationError(f"Gemini API returned error ({resp.status_code}): {resp.text}")
-            res_json = resp.json()
-            candidates = res_json.get("candidates", [])
-            if not candidates:
-                raise AIGenerationError("Gemini returned empty candidates in response.")
-            parts = candidates[0].get("content", {}).get("parts", [])
-            if not parts or "text" not in parts[0]:
-                raise AIGenerationError("Gemini response missing text content.")
-            return parts[0]["text"]
+
+        last_error = None
+        for m in models_to_try:
+            for api_version in ("v1beta", "v1"):
+                url = f"https://generativelanguage.googleapis.com/{api_version}/models/{m}:generateContent?key={self.api_key}"
+                try:
+                    async with httpx.AsyncClient(timeout=45.0) as client:
+                        resp = await client.post(url, headers=headers, json=payload)
+                        if resp.status_code == 200:
+                            res_json = resp.json()
+                            candidates = res_json.get("candidates", [])
+                            if not candidates:
+                                continue
+                            parts = candidates[0].get("content", {}).get("parts", [])
+                            if not parts or "text" not in parts[0]:
+                                continue
+                            return parts[0]["text"]
+                        last_error = f"({resp.status_code}): {resp.text}"
+                except Exception as e:
+                    last_error = str(e)
+
+        raise AIGenerationError(f"Gemini API returned error: {last_error}")
 
     async def _invoke_model(self, prompt: str, system_inst: str = SYSTEM_PROMPT) -> str:
         if not self.api_key:
@@ -180,24 +194,33 @@ class GeminiAIService(BaseAIService):
         return await self._call_gemini_rest(prompt, system_inst)
 
     async def check_health(self) -> Dict[str, Any]:
-        """Verify Gemini API key with a 1-token query."""
+        """Verify Gemini API key with a 1-token query across candidate models."""
         if not self.api_key:
             raise AIGenerationError("GEMINI_API_KEY is missing or empty in backend/.env")
 
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/{self.model}:generateContent?key={self.api_key}"
+        clean_model = self.model.replace("models/", "")
+        candidate_models = [clean_model, f"{clean_model}-latest", "gemini-1.5-flash-latest", "gemini-1.5-pro", "gemini-2.0-flash-exp"]
+        seen = set()
+        models_to_try = [m for m in candidate_models if not (m in seen or seen.add(m))]
+
         payload = {
             "contents": [{"parts": [{"text": "ping"}]}],
             "generationConfig": {"maxOutputTokens": 1}
         }
-        try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                resp = await client.post(url, json=payload)
-                if resp.status_code != 200:
-                    logger.error("Gemini health check error (%s): %s", resp.status_code, resp.text)
-                    raise AIGenerationError(f"Gemini API error ({resp.status_code}): {resp.text}")
-                return {"status": "ok", "model": self.model}
-        except AIGenerationError:
-            raise
+        last_error = None
+        for m in models_to_try:
+            for api_version in ("v1beta", "v1"):
+                url = f"https://generativelanguage.googleapis.com/{api_version}/models/{m}:generateContent?key={self.api_key}"
+                try:
+                    async with httpx.AsyncClient(timeout=10.0) as client:
+                        resp = await client.post(url, json=payload)
+                        if resp.status_code == 200:
+                            return {"status": "ok", "model": m, "api_version": api_version}
+                        last_error = f"({resp.status_code}): {resp.text}"
+                except Exception as e:
+                    last_error = str(e)
+
+        raise AIGenerationError(f"Gemini API error: {last_error}")
         except Exception as exc:
             logger.exception("AI health check failed")
             raise AIGenerationError(f"Gemini API connection error: {str(exc)}")

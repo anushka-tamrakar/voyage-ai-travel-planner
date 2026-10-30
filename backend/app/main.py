@@ -41,10 +41,25 @@ app.include_router(destinations_router)
 
 @app.get("/health", tags=["system"])
 async def health_check():
+    db_status = "unconfigured"
+    db_details = None
+    try:
+        from app.utils.auth import get_supabase
+        supabase = get_supabase()
+        res = supabase.table("users").select("id").limit(1).execute()
+        db_status = "connected"
+    except Exception as exc:
+        db_status = "error"
+        db_details = str(exc)
+
     return {
-        "status": "healthy",
+        "status": "healthy" if db_status == "connected" else "degraded",
         "service": settings.PROJECT_NAME,
-        "environment": settings.ENVIRONMENT
+        "environment": settings.ENVIRONMENT,
+        "database": {
+            "status": db_status,
+            "details": db_details
+        }
     }
 
 
@@ -64,40 +79,63 @@ async def root():
     }
 
 
+import re
+
+# CORS response helper to ensure error responses retain CORS headers
+def _cors_response(request: Request, content: dict, status_code: int) -> JSONResponse:
+    origin = request.headers.get("origin")
+    headers = {}
+    if origin:
+        is_allowed = (
+            origin in settings.cors_origins
+            or bool(re.match(r"^https:\/\/voyage-ai-travel-planner.*\.vercel\.app$", origin))
+        )
+        if is_allowed:
+            headers["Access-Control-Allow-Origin"] = origin
+            headers["Access-Control-Allow-Credentials"] = "true"
+            headers["Vary"] = "Origin"
+    return JSONResponse(status_code=status_code, content=content, headers=headers)
+
+
 # Global Exception Handlers
 @app.exception_handler(AppException)
 async def handle_app_exception(request: Request, exc: AppException):
     logger.warning("Handled AppException [%s]: %s (path: %s)", exc.status_code, exc.message, request.url.path)
-    return JSONResponse(
-        status_code=exc.status_code,
+    return _cors_response(
+        request,
         content={
             "error": exc.__class__.__name__,
             "message": exc.message,
             "details": exc.details
-        }
+        },
+        status_code=exc.status_code
     )
 
 
 @app.exception_handler(RequestValidationError)
 async def handle_validation_error(request: Request, exc: RequestValidationError):
     logger.warning("Request validation failed on %s: %s", request.url.path, exc.errors())
-    return JSONResponse(
-        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+    return _cors_response(
+        request,
         content={
             "error": "RequestValidationError",
             "message": "Input validation error",
             "details": exc.errors()
-        }
+        },
+        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY
     )
 
 
 @app.exception_handler(Exception)
 async def handle_generic_exception(request: Request, exc: Exception):
     logger.exception("Unhandled server exception on %s: %s", request.url.path, exc)
-    return JSONResponse(
-        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+    error_msg = str(exc)
+    return _cors_response(
+        request,
         content={
             "error": "InternalServerError",
-            "message": "An internal server error occurred. Please try again later."
-        }
+            "message": f"Server error: {error_msg}" if error_msg else "An internal server error occurred. Please try again later.",
+            "details": error_msg
+        },
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
     )
