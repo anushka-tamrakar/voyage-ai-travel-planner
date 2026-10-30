@@ -221,9 +221,6 @@ class GeminiAIService(BaseAIService):
                     last_error = str(e)
 
         raise AIGenerationError(f"Gemini API error: {last_error}")
-        except Exception as exc:
-            logger.exception("AI health check failed")
-            raise AIGenerationError(f"Gemini API connection error: {str(exc)}")
 
     async def annotate_places(
         self,
