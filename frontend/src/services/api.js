@@ -278,7 +278,7 @@ export const tripsAPI = {
   },
   generateItinerary: async (id) => {
     try {
-      const response = await api.post(/trips//generate);
+      const response = await api.post('/trips/' + id + '/generate');
       return response.data;
     } catch (error) {
       if (isFallbackNeeded(error)) {
@@ -293,36 +293,52 @@ export const tripsAPI = {
 
         const days = [];
         for (let i = 1; i <= Math.min(daysDiff, 10); i++) {
+          const morning = {
+            time: '09:00 AM - 12:30 PM',
+            title: city + ' Heritage & Cultural Exploration',
+            place_name: city + ' Central Plaza',
+            exact_name: city + ' Central Plaza',
+            area: 'Central District',
+            description: 'Discover historic streets, architectural landmarks, and local craft centers across ' + city + '.',
+            cost: '₹350',
+            estimated_cost: '₹350',
+            tip: 'Arrive early to avoid crowds and take great photos in morning light.',
+            travel_tip: 'Arrive early to avoid crowds and take great photos in morning light.',
+          };
+          const afternoon = {
+            time: '01:30 PM - 05:00 PM',
+            title: city + ' Arts & Nature Gardens',
+            place_name: city + ' Public Gardens & Promenade',
+            exact_name: city + ' Public Gardens & Promenade',
+            area: 'Garden Quarter',
+            description: 'Relax at prominent botanical gardens, waterfront promenades, and cultural museums.',
+            cost: '₹500',
+            estimated_cost: '₹500',
+            tip: 'Enjoy authentic regional cuisine at nearby neighborhood cafes.',
+            travel_tip: 'Enjoy authentic regional cuisine at nearby neighborhood cafes.',
+          };
+          const evening = {
+            time: '06:00 PM - 09:30 PM',
+            title: city + ' Night Bazaar & Dining',
+            place_name: city + ' Main Street Bazaar',
+            exact_name: city + ' Main Street Bazaar',
+            area: 'Bazaar Hub',
+            description: 'Experience the vibrant evening atmosphere, night street markets, and dinner.',
+            cost: '₹750',
+            estimated_cost: '₹750',
+            tip: 'Sample popular specialty dishes and local street treats.',
+            travel_tip: 'Sample popular specialty dishes and local street treats.',
+          };
+
           days.push({
+            day: i,
             day_number: i,
             title: 'Day ' + i + ': Exploring ' + city,
-            morning: {
-              time: '09:00 AM - 12:30 PM',
-              title: city + ' Heritage & Cultural Exploration',
-              description: 'Discover historic streets, architectural landmarks, and local craft centers across ' + city + '.',
-              cost: '₹350',
-              tip: 'Arrive early to avoid crowds and take great photos in morning light.',
-              exact_name: city + ' Central Plaza',
-              area: 'Central District',
-            },
-            afternoon: {
-              time: '01:30 PM - 05:00 PM',
-              title: city + ' Arts & Nature Gardens',
-              description: 'Relax at prominent botanical gardens, waterfront promenades, and cultural museums.',
-              cost: '₹500',
-              tip: 'Enjoy authentic regional cuisine at nearby neighborhood cafes.',
-              exact_name: city + ' Public Gardens & Promenade',
-              area: 'Garden Quarter',
-            },
-            evening: {
-              time: '06:00 PM - 09:30 PM',
-              title: city + ' Night Bazaar & Dining',
-              description: 'Experience the vibrant evening atmosphere, night street markets, and dinner.',
-              cost: '₹750',
-              tip: 'Sample popular specialty dishes and local street treats.',
-              exact_name: city + ' Main Street Bazaar',
-              area: 'Bazaar Hub',
-            },
+            theme: 'Highlights & Sights of ' + city,
+            morning,
+            afternoon,
+            evening,
+            activities: [morning, afternoon, evening],
             stay_recommendation: {
               exact_name: 'Grand ' + city + ' Boutique Stay',
               area: 'Central City',
@@ -338,6 +354,7 @@ export const tripsAPI = {
                 area: 'Heritage District',
               },
             ],
+            day_cost: 4000,
             daily_estimated_cost: '₹4,000',
           });
         }

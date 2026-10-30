@@ -350,7 +350,34 @@ export const ItineraryView = () => {
     downloadAnchor.remove();
   };
 
-  const days = trip?.itinerary?.days || [];
+  const days = useMemo(() => {
+    const rawDays = trip?.itinerary?.days || [];
+    return rawDays.map((d) => {
+      let activities = Array.isArray(d.activities) ? [...d.activities] : [];
+      if (activities.length === 0) {
+        ['morning', 'afternoon', 'evening'].forEach((slot) => {
+          if (d[slot]) {
+            const item = d[slot];
+            activities.push({
+              time: item.time || (slot === 'morning' ? '09:00 AM - 12:30 PM' : slot === 'afternoon' ? '01:30 PM - 05:00 PM' : '06:00 PM - 09:30 PM'),
+              title: item.title || (slot.charAt(0).toUpperCase() + slot.slice(1) + ': ' + (item.exact_name || item.name || 'Exploration')),
+              place_name: item.exact_name || item.name || item.title || 'Attraction',
+              area: item.area || 'City Area',
+              lat: item.lat || null,
+              lng: item.lng || null,
+              estimated_cost: item.cost || item.estimated_cost || '₹350',
+              description: item.description || '',
+              travel_tip: item.tip || item.travel_tip || '',
+            });
+          }
+        });
+      }
+      return {
+        ...d,
+        activities,
+      };
+    });
+  }, [trip?.itinerary?.days]);
   const currentDay = days[activeDayIndex] || (days.length > 0 ? days[0] : null);
   const recommendations = trip?.itinerary?.recommendations || { hotels: [], dining: [] };
 
